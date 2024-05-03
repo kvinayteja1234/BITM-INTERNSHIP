@@ -1,0 +1,185 @@
+import streamlit as st
+import datetime
+import sqlite3
+import json
+
+# Database connection
+conn = sqlite3.connect('photography_booking.db')
+c = conn.cursor()
+
+# Create tables if not exist
+c.execute('''CREATE TABLE IF NOT EXISTS photographers 
+             (name TEXT PRIMARY KEY, specialty TEXT, availability TEXT, rating REAL)''')
+
+c.execute('''CREATE TABLE IF NOT EXISTS bookings 
+             (id INTEGER PRIMARY KEY, photographer TEXT, event_date DATE, amount REAL, feedback TEXT)''')
+
+# Function to create a new photographer
+def create_photographer(name, specialty, availability):
+    c.execute("INSERT INTO photographers VALUES (?, ?, ?, ?)", (name, specialty, json.dumps(availability), 0))
+    conn.commit()
+    st.success("Photographer created successfully!")
+
+# Function to read photographer information
+def read_photographer(name):
+    c.execute("SELECT * FROM photographers WHERE name=?", (name,))
+    photographer = c.fetchone()
+    if photographer:
+        name, specialty, availability, rating = photographer
+        st.write(f"Name: {name}, Specialty: {specialty}, Availability: {availability}, Rating: {rating}")
+    else:
+        st.warning("Photographer not found.")
+
+# Function to update photographer information
+def update_photographer(name, specialty, availability):
+    c.execute("UPDATE photographers SET specialty=?, availability=? WHERE name=?", (specialty, json.dumps(availability), name))
+    conn.commit()
+    st.success("Photographer information updated successfully!")
+
+# Function to delete a photographer
+def delete_photographer(name):
+    c.execute("DELETE FROM photographers WHERE name=?", (name,))
+    conn.commit()
+    st.success("Photographer deleted successfully!")
+
+# Function to display all photographers
+def display_photographers():
+    st.subheader("All Photographers:")
+    c.execute("SELECT * FROM photographers")
+    photographers = c.fetchall()
+    for photographer in photographers:
+        name, specialty, availability, rating = photographer
+        st.write(f"Name: {name}, Specialty: {specialty}, Availability: {availability}, Rating: {rating}")
+
+# Function to display available photographers
+def display_available_photographers(event_day):
+    st.subheader("Available Photographers:")
+    event_day_name = event_day.strftime("%A")
+    c.execute("SELECT * FROM photographers")
+    photographers = c.fetchall()
+    for photographer in photographers:
+        name, specialty, availability, rating = photographer
+        if event_day_name.lower() in [day.strip().lower() for day in availability.split(",")]:
+            st.write(f"Name: {name}, Specialty: {specialty}, Availability: {availability}, Rating: {rating}")
+
+# Function to book a photographer
+def book_photographer(name, event_date, amount):
+    c.execute("SELECT availability FROM photographers WHERE name=?", (name,))
+    availability = c.fetchone()
+    if availability:
+        availability = availability[0]
+        available_days = [day.strip().lower() for day in availability.split(",")]
+        event_day_name = event_date.strftime("%A").lower()
+        if event_day_name in available_days:
+            c.execute("INSERT INTO bookings (photographer, event_date, amount) VALUES (?, ?, ?)", (name, event_date.strftime('%Y-%m-%d'), amount))
+            conn.commit()
+            st.success("Booking successful!")
+        else:
+            st.warning("Photographer not available on that day.")
+    else:
+        st.warning("Photographer not found.")
+
+# Function to display bookings
+def display_bookings():
+    st.subheader("Your Bookings:")
+    c.execute("SELECT * FROM bookings")
+    bookings = c.fetchall()
+    for booking in bookings:
+        id, photographer, event_date, amount, feedback = booking
+        st.write(f"Booking {id}: Photographer: {photographer}, Event Date: {event_date}, Amount: {amount}, Feedback: {feedback}")
+
+# Function to leave feedback for a booking
+def leave_feedback(booking_id, feedback):
+    c.execute("UPDATE bookings SET feedback=? WHERE id=?", (feedback, booking_id))
+    conn.commit()
+    st.success("Feedback submitted successfully!")
+
+# Function to refund amount if event is canceled
+def refund_amount(booking_id):
+    c.execute("SELECT amount FROM bookings WHERE id=?", (booking_id,))
+    amount = c.fetchone()
+    if amount is not None:
+        amount = amount[0]
+        c.execute("DELETE FROM bookings WHERE id=?", (booking_id,))
+        conn.commit()
+        st.success(f"Amount of ${amount} refunded successfully.")
+    else:
+        st.warning("No booking found with the provided ID.")
+
+# Main function
+def main():
+    st.title("Sports Photography Booking System")
+    choice = st.sidebar.radio("Select Option", ["Create a photographer", "Read photographer information", 
+                                                "Update photographer information", "Delete a photographer", 
+                                                "Display all photographers", "Display available photographers for a specific day", 
+                                                "Book a photographer", "Display your bookings", "Leave feedback for a booking", 
+                                                "Refund amount", "Exit"], key="menu")
+
+    if choice == "Create a photographer":
+        st.header("Create a Photographer")
+        name = st.text_input("Enter photographer's name:")
+        specialty = st.text_input("Enter photographer's specialty:")
+        availability = st.text_input("Enter photographer's availability (comma-separated days):")
+        if st.button("Create"):
+            create_photographer(name, specialty, availability)
+
+    elif choice == "Read photographer information":
+        st.header("Read Photographer Information")
+        name = st.text_input("Enter photographer's name:")
+        if st.button("Read"):
+            read_photographer(name)
+
+    elif choice == "Update photographer information":
+        st.header("Update Photographer Information")
+        name = st.text_input("Enter photographer's name:")
+        specialty = st.text_input("Enter updated specialty:")
+        availability = st.text_input("Enter updated availability (comma-separated days):")
+        if st.button("Update"):
+            update_photographer(name, specialty, availability)
+
+    elif choice == "Delete a photographer":
+        st.header("Delete a Photographer")
+        name = st.text_input("Enter photographer's name to delete:")
+        if st.button("Delete"):
+            delete_photographer(name)
+
+    elif choice == "Display all photographers":
+        st.header("Display All Photographers")
+        display_photographers()
+
+    elif choice == "Display available photographers for a specific day":
+        st.header("Display Available Photographers")
+        event_date = st.date_input("Enter event date:")
+        if st.button("Display"):
+            display_available_photographers(event_date)
+
+    elif choice == "Book a photographer":
+        st.header("Book a Photographer")
+        name = st.text_input("Enter photographer's name:")
+        event_date = st.date_input("Enter event date:")
+        amount = st.number_input("Enter amount for the event:")
+        if st.button("Book"):
+            book_photographer(name, event_date, amount)
+
+    elif choice == "Display your bookings":
+        st.header("Your Bookings")
+        display_bookings()
+
+    elif choice == "Leave feedback for a booking":
+        st.header("Leave Feedback for a Booking")
+        booking_id = st.number_input("Enter booking ID:")
+        feedback = st.text_area("Enter feedback for the booking:")
+        if st.button("Submit"):
+            leave_feedback(booking_id, feedback)
+
+    elif choice == "Refund amount":
+        st.header("Refund Amount")
+        booking_id = st.number_input("Enter booking ID to refund:")
+        if st.button("Refund"):
+            refund_amount(booking_id)
+
+    elif choice == "Exit":
+        st.write("Thank you for using the system. Goodbye!")
+
+if name == "main":
+    main()
